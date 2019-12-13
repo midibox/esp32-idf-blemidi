@@ -53,7 +53,7 @@
 /* The max length of characteristic value. When the GATT client performs a write or prepare write operation,
 *  the data length must be less than GATTS_MIDI_CHAR_VAL_LEN_MAX. 
 */
-#define GATTS_MIDI_CHAR_VAL_LEN_MAX      500
+#define GATTS_MIDI_CHAR_VAL_LEN_MAX 100
 #define PREPARE_BUF_MAX_SIZE        2048
 #define CHAR_DECLARATION_SIZE       (sizeof(uint8_t))
 
@@ -180,7 +180,32 @@ void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t ti
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
 {
-  esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], len, stream, false);
+  // we've to consider GATTS_MIDI_CHAR_VAL_LEN_MAX
+  // if more bytes need to be sent, split over multiple packets
+  // this will cost some extra stack space :-/ therefore handled separatly?
+
+  if( len < (GATTS_MIDI_CHAR_VAL_LEN_MAX-10) ) {
+    esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], len, stream, false);
+  } else {
+    int pos;
+    for(pos=0; pos<len; pos += (GATTS_MIDI_CHAR_VAL_LEN_MAX-10)) {
+      if( pos == 0 ) {
+	printf("Send Pos=0\n");
+	esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], GATTS_MIDI_CHAR_VAL_LEN_MAX-10, stream, false);
+      } else {
+	uint8_t packet[GATTS_MIDI_CHAR_VAL_LEN_MAX]; // now it becomes stack hungry...
+	size_t packet_len = len-pos+1;
+	if( packet_len >= (GATTS_MIDI_CHAR_VAL_LEN_MAX-10) ) {
+	  packet_len = GATTS_MIDI_CHAR_VAL_LEN_MAX - 10 + 1;
+	}
+	packet[0] = 0x80;
+	memcpy(&packet[1], &stream[pos], packet_len-1);
+	esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], packet_len, packet, false);
+	printf("Send Pos=%d len=%d\n", pos, packet_len);
+      }
+    }
+  }
+  
 
   return 0; // no error
 }
