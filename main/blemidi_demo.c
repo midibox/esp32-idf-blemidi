@@ -101,6 +101,8 @@ void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, ui
       memcpy(&loopback_packet[3], remaining_message, len);
 
       blemidi_send_packet(0, loopback_packet, loopback_packet_len);
+
+      free(loopback_packet);
     }
   }
 }
