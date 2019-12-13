@@ -262,13 +262,12 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
 
 	if( midi_status == 0xf0 ) {
 	  size_t num_bytes;
-	  for(num_bytes=0; stream[pos+num_bytes] != 0xf7; ++num_bytes) {
+	  for(num_bytes=0; stream[pos+num_bytes] < 0x80; ++num_bytes) {
 	    if( (pos+num_bytes) > len ) {
 	      ESP_LOGE(BLEMIDI_TAG, "unterminated SysEx (TODO: support for continued SysEx streams)");
 	      return -4;
 	    }
 	  }
-	  num_bytes += 1; // including 0xf7
 	  if( _callback_midi_message_received ) {
 	    callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes);
 	  }
