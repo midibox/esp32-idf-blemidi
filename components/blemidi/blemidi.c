@@ -190,7 +190,6 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
     int pos;
     for(pos=0; pos<len; pos += (GATTS_MIDI_CHAR_VAL_LEN_MAX-10)) {
       if( pos == 0 ) {
-	printf("Send Pos=0\n");
 	esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], GATTS_MIDI_CHAR_VAL_LEN_MAX-10, stream, false);
       } else {
 	uint8_t packet[GATTS_MIDI_CHAR_VAL_LEN_MAX]; // now it becomes stack hungry...
@@ -201,7 +200,6 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
 	packet[0] = 0x80;
 	memcpy(&packet[1], &stream[pos], packet_len-1);
 	esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], packet_len, packet, false);
-	printf("Send Pos=%d len=%d\n", pos, packet_len);
       }
     }
   }
