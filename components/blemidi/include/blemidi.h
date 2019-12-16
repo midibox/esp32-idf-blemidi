@@ -87,7 +87,30 @@ extern int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t
  * @return < 0 on errors
  */  
 extern void blemidi_receive_packet_callback_for_debugging(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len);
+
+/**
+ * @brief This function should be called each mS to increase the timestamp
+ *
+ * @param  ms how many ticks (corresponding to mS) should be added
+ *
+ * @return < 0 on errors
+ */  
+extern void blemidi_tick_ms(uint16_t ms);
   
+/**
+ * @brief This function returns the high part of the timestamp
+
+ * @return < 0 on errors
+ */  
+extern uint8_t blemidi_timestamp_high(void);
+  
+/**
+ * @brief This function returns the low part of the timestamp
+
+ * @return < 0 on errors
+ */  
+extern uint8_t blemidi_timestamp_low(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -55,20 +55,24 @@ static void task_midi(void *pvParameters)
   while( 1 ) {
     vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
 
+    blemidi_tick_ms(500); // for timestamp handling
+
     ctr += 1;
     ESP_LOGI(BLEMIDI_TAG, "Sending MIDI Note #%d", ctr);
 
     {
       // TODO: more comfortable packet creation via special APIs
-      uint8_t packet[5] = { 0x80, 0x80, 0x90, 0x3c, 0x7f };
+      uint8_t packet[5] = { blemidi_timestamp_high(), blemidi_timestamp_low(), 0x90, 0x3c, 0x7f };
       blemidi_send_packet(0, packet, 5);
     }
     
     vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
 
+    blemidi_tick_ms(500); // for timestamp handling
+
     {
       // TODO: more comfortable packet creation via special APIs
-      uint8_t packet[5] = { 0x80, 0x80, 0x90, 0x3c, 0x00 };
+      uint8_t packet[5] = { blemidi_timestamp_high(), blemidi_timestamp_low(), 0x90, 0x3c, 0x00 };
       blemidi_send_packet(0, packet, 5);
     }
 
@@ -94,9 +98,10 @@ void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, ui
     size_t loopback_packet_len = 3 + len; // includes timestamp, MIDI status and remaining bytes
     uint8_t *loopback_packet = (uint8_t *)malloc(loopback_packet_len * sizeof(uint8_t));
     if( loopback_packet == NULL ) {
+      // no memory...
     } else {
-      loopback_packet[0] = 0x80; // timestampHigh
-      loopback_packet[1] = 0x80; // timestampLow
+      loopback_packet[0] = blemidi_timestamp_high();
+      loopback_packet[1] = blemidi_timestamp_low();
       loopback_packet[2] = midi_status;
       memcpy(&loopback_packet[3], remaining_message, len);
 

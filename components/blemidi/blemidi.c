@@ -62,6 +62,10 @@
 
 static uint8_t adv_config_done       = 0;
 
+// This timestamp should be increased each mS from the application via blemidi_tick_ms() call:
+static uint16_t blemidi_timestamp = 0;
+
+
 /* Attributes State Machine */
 enum
 {
@@ -176,6 +180,25 @@ void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t ti
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+// Timestamp handling
+////////////////////////////////////////////////////////////////////////////////////////////////////
+void blemidi_tick_ms(uint16_t ms)
+{
+  blemidi_timestamp += ms;
+}
+
+uint8_t blemidi_timestamp_high(void)
+{
+  return (0x80 | ((blemidi_timestamp >> 7) & 0x3f));
+}
+
+uint8_t blemidi_timestamp_low(void)
+{
+  return (0x80 | (blemidi_timestamp & 0x7f));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 // Sends a BLE MIDI packet
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
@@ -197,7 +220,7 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
 	if( packet_len >= (GATTS_MIDI_CHAR_VAL_LEN_MAX-10) ) {
 	  packet_len = GATTS_MIDI_CHAR_VAL_LEN_MAX - 10 + 1;
 	}
-	packet[0] = 0x80;
+	packet[0] = blemidi_timestamp_high();
 	memcpy(&packet[1], &stream[pos], packet_len-1);
 	esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], packet_len, packet, false);
       }
