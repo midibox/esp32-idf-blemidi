@@ -72,6 +72,7 @@ enum
     IDX_SVC,
     IDX_CHAR_A,
     IDX_CHAR_VAL_A,
+    IDX_CHAR_CFG_A,
     
     HRS_IDX_NB,
 };
@@ -175,6 +176,7 @@ static const uint8_t char_prop_read_write_notify   = ESP_GATT_CHAR_PROP_BIT_WRIT
 static const uint8_t char_prop_read_write_writenr_notify = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
 
 static const uint8_t char_value[3]                 = {0x80, 0x80, 0xfe};
+static const uint8_t blemidi_ccc[2]                = {0x00, 0x00};
 
 void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len);
 
@@ -373,6 +375,11 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
     [IDX_CHAR_VAL_A] =
     {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, (uint8_t *)&midi_characteristics_uuid, ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
       GATTS_MIDI_CHAR_VAL_LEN_MAX, sizeof(char_value), (uint8_t *)char_value}},
+
+    /* Client Characteristic Configuration Descriptor (this is a BLE2902 descriptor) */
+    [IDX_CHAR_CFG_A]  =
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid, ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+      sizeof(uint16_t), sizeof(blemidi_ccc), (uint8_t *)blemidi_ccc}},
 };
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
