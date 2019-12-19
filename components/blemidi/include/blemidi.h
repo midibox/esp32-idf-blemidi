@@ -52,6 +52,10 @@ extern "C" {
 #define BLEMIDI_NUM_PORTS 1
 #endif
 
+#ifndef BLEMIDI_OUTBUFFER_FLUSH_MS
+#define BLEMIDI_OUTBUFFER_FLUSH_MS 15
+#endif
+  
 /**
  * @brief Initializes the BLEMIDI Server
  *
@@ -73,6 +77,16 @@ extern int32_t blemidi_init(void *callback_midi_message_received);
  */  
 extern int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len);
 
+/**
+ * @brief Flush Output Buffer (normally done by blemidi_tick_ms each 15 mS)
+ *
+ * @param  blemidi_port currently always 0 expected (we might support multiple ports in future)
+ *
+ * @return < 0 on errors
+ *
+ */  
+extern int32_t blemidi_outbuffer_flush(uint8_t blemidi_port);
+  
 /**
  * @brief A dummy callback which demonstrates the usage.
  *        It will just print out incoming MIDI messages on the terminal.
