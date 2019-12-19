@@ -83,9 +83,9 @@ static void task_midi(void *pvParameters)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // This callback is called whenever a new MIDI message is received
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len)
+void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos)
 {
-  ESP_LOGI(BLEMIDI_TAG, "CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, remaining_message:", blemidi_port, timestamp, midi_status, len);
+  ESP_LOGI(BLEMIDI_TAG, "CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, continued_sysex_pos=%d, remaining_message:", blemidi_port, timestamp, midi_status, len, continued_sysex_pos);
   esp_log_buffer_hex(BLEMIDI_TAG, remaining_message, len);
 
   // loopback received message

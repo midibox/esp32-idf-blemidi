@@ -73,6 +73,8 @@ static uint8_t  blemidi_outbuffer[BLEMIDI_NUM_PORTS][GATTS_MIDI_CHAR_VAL_LEN_MAX
 static uint16_t blemidi_outbuffer_len[BLEMIDI_NUM_PORTS];
 static uint16_t blemidi_outbuffer_timestamp_last_flush = 0;
 
+// to handled continued SysEx
+static size_t   blemidi_continued_sysex_pos[BLEMIDI_NUM_PORTS];
 
 /* Attributes State Machine */
 enum
@@ -186,7 +188,7 @@ static const uint8_t char_prop_read_write_writenr_notify = ESP_GATT_CHAR_PROP_BI
 static const uint8_t char_value[3]                 = {0x80, 0x80, 0xfe};
 static const uint8_t blemidi_ccc[2]                = {0x00, 0x00};
 
-void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len);
+void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -311,10 +313,22 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, size_t len, void *_callback_midi_message_received)
 {
-  void (*callback_midi_message_received)(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len) = _callback_midi_message_received;
+  void (*callback_midi_message_received)(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos) = _callback_midi_message_received;
 
+  if( blemidi_port >= BLEMIDI_NUM_PORTS )
+    return -1; // invalid port
+  
   ESP_LOGI(BLEMIDI_TAG, "receive_packet blemidi_port=%d, len=%d, stream:", blemidi_port, len);
   esp_log_buffer_hex(BLEMIDI_TAG, stream, len);
+
+  // detect continued SysEx
+  uint8_t continued_sysex = 0;
+  if( len > 2 && (stream[0] & 0x80) && !(stream[1] & 0x80)) {
+    continued_sysex = 1;
+  } else {
+    blemidi_continued_sysex_pos[blemidi_port] = 0;
+  }
+  
   
   if( len < 3 ) {
     ESP_LOGE(BLEMIDI_TAG, "stream length should be >=3");
@@ -364,16 +378,19 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
 	0, // Reset
       };
       
-      uint8_t midi_status = 0x00;
+      uint8_t midi_status = continued_sysex ? 0xf0 : 0x00;
 
       while( pos < len ) {
 	if( !(stream[pos] & 0x80) ) {
-	  // TODO: support for continued SysEx streams
-	  ESP_LOGE(BLEMIDI_TAG, "missing timestampLow in parsed message");
-	  return -3;
+	  if( !continued_sysex ) {
+	    ESP_LOGE(BLEMIDI_TAG, "missing timestampLow in parsed message");
+	    return -3;
+	  }
 	} else {
 	  timestamp &= ~0x7f;
 	  timestamp |= stream[pos++] & 0x7f;
+	  continued_sysex = 0;
+	  blemidi_continued_sysex_pos[blemidi_port] = 0;
 	}
 	
 	if( stream[pos] & 0x80 ) {
@@ -383,15 +400,15 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
 	if( midi_status == 0xf0 ) {
 	  size_t num_bytes;
 	  for(num_bytes=0; stream[pos+num_bytes] < 0x80; ++num_bytes) {
-	    if( (pos+num_bytes) > len ) {
-	      ESP_LOGE(BLEMIDI_TAG, "unterminated SysEx (TODO: support for continued SysEx streams)");
-	      return -4;
+	    if( (pos+num_bytes) >= len ) {
+	      break;
 	    }
 	  }
 	  if( _callback_midi_message_received ) {
-	    callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes);
+	    callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, blemidi_continued_sysex_pos[blemidi_port]);
 	  }
 	  pos += num_bytes;
+	  blemidi_continued_sysex_pos[blemidi_port] += num_bytes; // we expect another packet with the remaining SysEx stream
 	} else {
 	  uint8_t num_bytes = midi_expected_bytes_common[(midi_status >> 4) & 0x7];
 	  if( num_bytes == 0 ) { // System Message
@@ -403,7 +420,7 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
 	    return -5;
 	  } else {
 	    if( _callback_midi_message_received ) {
-	      callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes);
+	      callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, 0);
 	    }
 	    pos += num_bytes;
 	  }
@@ -419,9 +436,9 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Dummy callback for demo and debugging purposes
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-void blemidi_receive_packet_callback_for_debugging(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len)
+void blemidi_receive_packet_callback_for_debugging(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos)
 {
-  ESP_LOGI(BLEMIDI_TAG, "receive_packet CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, remaining_message:", blemidi_port, timestamp, midi_status, len);
+  ESP_LOGI(BLEMIDI_TAG, "receive_packet CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, continued_sysex_pos=%d, remaining_message:", blemidi_port, timestamp, midi_status, len, continued_sysex_pos);
   esp_log_buffer_hex(BLEMIDI_TAG, remaining_message, len);
 }
 
@@ -779,6 +796,7 @@ int32_t blemidi_init(void *_callback_midi_message_received)
     uint32_t blemidi_port;
     for(blemidi_port=0; blemidi_port<BLEMIDI_NUM_PORTS; ++blemidi_port) {
       blemidi_outbuffer_len[blemidi_port] = 0;
+      blemidi_continued_sysex_pos[blemidi_port] = 0;
     }
   }
   
