@@ -418,7 +418,7 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
         } else {
           uint8_t num_bytes = midi_expected_bytes_common[(midi_status >> 4) & 0x7];
           if( num_bytes == 0 ) { // System Message
-            num_bytes = midi_expected_bytes_system[midi_status >> 4];
+            num_bytes = midi_expected_bytes_system[midi_status & 0xf];
           }
 
           if( (pos+num_bytes) > len ) {
