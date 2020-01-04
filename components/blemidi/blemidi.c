@@ -39,10 +39,16 @@
 #include "nvs_flash.h"
 #include "esp_bt.h"
 
+#include "blemidi.h"
+
+#if BLEMIDI_ENABLE_CONSOLE
+# include "esp_console.h"
+# include "argtable3/argtable3.h"
+#endif
+
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "esp_bt_main.h"
-#include "blemidi.h"
 #include "esp_gatt_common_api.h"
 
 #define PROFILE_NUM                 1
@@ -166,7 +172,7 @@ struct gatts_profile_inst {
 };
 
 static void gatts_profile_event_handler(esp_gatts_cb_event_t event,
-					esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+                                        esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
 /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
 static struct gatts_profile_inst midi_profile_tab[PROFILE_NUM] = {
@@ -289,16 +295,16 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
     int pos;
     for(pos=0; pos<len; pos += blemidi_mtu) {
       if( pos == 0 ) {
-	blemidi_outbuffer_push(blemidi_port, stream, blemidi_mtu);
+        blemidi_outbuffer_push(blemidi_port, stream, blemidi_mtu);
       } else {
-	uint8_t packet[GATTS_MIDI_CHAR_VAL_LEN_MAX]; // now it becomes stack hungry...
-	size_t packet_len = len-pos+1;
-	if( packet_len >= blemidi_mtu ) {
-	  packet_len = blemidi_mtu + 1;
-	}
-	packet[0] = blemidi_timestamp_high();
-	memcpy(&packet[1], &stream[pos], packet_len-1);
-	blemidi_outbuffer_push(blemidi_port, packet, packet_len);
+        uint8_t packet[GATTS_MIDI_CHAR_VAL_LEN_MAX]; // now it becomes stack hungry...
+        size_t packet_len = len-pos+1;
+        if( packet_len >= blemidi_mtu ) {
+          packet_len = blemidi_mtu + 1;
+        }
+        packet[0] = blemidi_timestamp_high();
+        memcpy(&packet[1], &stream[pos], packet_len-1);
+        blemidi_outbuffer_push(blemidi_port, packet, packet_len);
       }
     }
   }
@@ -350,81 +356,81 @@ static int32_t blemidi_receive_packet(uint8_t blemidi_port, uint8_t *stream, siz
         2, // Note Off
         2, // Poly Preasure
         2, // Controller
-	1, // Program Change
-	1, // Channel Preasure
-	2, // Pitch Bender
-	0, // System Message - must be zero, so that mios32_midi_expected_bytes_system[] will be used
+        1, // Program Change
+        1, // Channel Preasure
+        2, // Pitch Bender
+        0, // System Message - must be zero, so that mios32_midi_expected_bytes_system[] will be used
       };
 
       //! Number if expected bytes for a system MIDI event - 1
       const uint8_t midi_expected_bytes_system[16] = {
         1, // SysEx Begin (endless until SysEx End F7)
-	1, // MTC Data frame
-	2, // Song Position
-	1, // Song Select
-	0, // Reserved
-	0, // Reserved
-	0, // Request Tuning Calibration
-	0, // SysEx End
+        1, // MTC Data frame
+        2, // Song Position
+        1, // Song Select
+        0, // Reserved
+        0, // Reserved
+        0, // Request Tuning Calibration
+        0, // SysEx End
 
-	// Note: just only for documentation, Realtime Messages don't change the running status
-	0, // MIDI Clock
-	0, // MIDI Tick
-	0, // MIDI Start
-	0, // MIDI Continue
-	0, // MIDI Stop
-	0, // Reserved
-	0, // Active Sense
-	0, // Reset
+        // Note: just only for documentation, Realtime Messages don't change the running status
+        0, // MIDI Clock
+        0, // MIDI Tick
+        0, // MIDI Start
+        0, // MIDI Continue
+        0, // MIDI Stop
+        0, // Reserved
+        0, // Active Sense
+        0, // Reset
       };
       
       uint8_t midi_status = continued_sysex ? 0xf0 : 0x00;
 
       while( pos < len ) {
-	if( !(stream[pos] & 0x80) ) {
-	  if( !continued_sysex ) {
-	    ESP_LOGE(BLEMIDI_TAG, "missing timestampLow in parsed message");
-	    return -3;
-	  }
-	} else {
-	  timestamp &= ~0x7f;
-	  timestamp |= stream[pos++] & 0x7f;
-	  continued_sysex = 0;
-	  blemidi_continued_sysex_pos[blemidi_port] = 0;
-	}
-	
-	if( stream[pos] & 0x80 ) {
-	  midi_status = stream[pos++];
-	}
+        if( !(stream[pos] & 0x80) ) {
+          if( !continued_sysex ) {
+            ESP_LOGE(BLEMIDI_TAG, "missing timestampLow in parsed message");
+            return -3;
+          }
+        } else {
+          timestamp &= ~0x7f;
+          timestamp |= stream[pos++] & 0x7f;
+          continued_sysex = 0;
+          blemidi_continued_sysex_pos[blemidi_port] = 0;
+        }
+        
+        if( stream[pos] & 0x80 ) {
+          midi_status = stream[pos++];
+        }
 
-	if( midi_status == 0xf0 ) {
-	  size_t num_bytes;
-	  for(num_bytes=0; stream[pos+num_bytes] < 0x80; ++num_bytes) {
-	    if( (pos+num_bytes) >= len ) {
-	      break;
-	    }
-	  }
-	  if( _callback_midi_message_received ) {
-	    callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, blemidi_continued_sysex_pos[blemidi_port]);
-	  }
-	  pos += num_bytes;
-	  blemidi_continued_sysex_pos[blemidi_port] += num_bytes; // we expect another packet with the remaining SysEx stream
-	} else {
-	  uint8_t num_bytes = midi_expected_bytes_common[(midi_status >> 4) & 0x7];
-	  if( num_bytes == 0 ) { // System Message
-	    num_bytes = midi_expected_bytes_system[midi_status >> 4];
-	  }
+        if( midi_status == 0xf0 ) {
+          size_t num_bytes;
+          for(num_bytes=0; stream[pos+num_bytes] < 0x80; ++num_bytes) {
+            if( (pos+num_bytes) >= len ) {
+              break;
+            }
+          }
+          if( _callback_midi_message_received ) {
+            callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, blemidi_continued_sysex_pos[blemidi_port]);
+          }
+          pos += num_bytes;
+          blemidi_continued_sysex_pos[blemidi_port] += num_bytes; // we expect another packet with the remaining SysEx stream
+        } else {
+          uint8_t num_bytes = midi_expected_bytes_common[(midi_status >> 4) & 0x7];
+          if( num_bytes == 0 ) { // System Message
+            num_bytes = midi_expected_bytes_system[midi_status >> 4];
+          }
 
-	  if( (pos+num_bytes) > len ) {
-	    ESP_LOGE(BLEMIDI_TAG, "missing %d bytes in parsed message", num_bytes);
-	    return -5;
-	  } else {
-	    if( _callback_midi_message_received ) {
-	      callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, 0);
-	    }
-	    pos += num_bytes;
-	  }
-	}
+          if( (pos+num_bytes) > len ) {
+            ESP_LOGE(BLEMIDI_TAG, "missing %d bytes in parsed message", num_bytes);
+            return -5;
+          } else {
+            if( _callback_midi_message_received ) {
+              callback_midi_message_received(blemidi_port, timestamp, midi_status, &stream[pos], num_bytes, 0);
+            }
+            pos += num_bytes;
+          }
+        }
       }
     }
   }
@@ -602,25 +608,25 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 ESP_LOGE(BLEMIDI_TAG, "create attr table failed, error code = %x", create_attr_ret);
             }
         }
-       	    break;
+            break;
         case ESP_GATTS_READ_EVT:
             ESP_LOGI(BLEMIDI_TAG, "ESP_GATTS_READ_EVT");
-       	    break;
+            break;
         case ESP_GATTS_WRITE_EVT:
             if (!param->write.is_prep){
                 if (midi_handle_table[IDX_CHAR_VAL_A] == param->write.handle ) {
-		  // the data length of gattc write  must be less than blemidi_mtu.
-#if 0		  
-		  ESP_LOGI(BLEMIDI_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d, value :", param->write.handle, param->write.len);
-		  esp_log_buffer_hex(BLEMIDI_TAG, param->write.value, param->write.len);
+                  // the data length of gattc write  must be less than blemidi_mtu.
+#if 0             
+                  ESP_LOGI(BLEMIDI_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d, value :", param->write.handle, param->write.len);
+                  esp_log_buffer_hex(BLEMIDI_TAG, param->write.value, param->write.len);
 #endif
-		  blemidi_receive_packet(0, param->write.value, param->write.len, blemidi_callback_midi_message_received);
-		}
-	    } else {
+                  blemidi_receive_packet(0, param->write.value, param->write.len, blemidi_callback_midi_message_received);
+                }
+            } else {
                 /* handle prepare write */
                 blemidi_prepare_write_event_env(gatts_if, &prepare_write_env, param);
-	    }
-      	    break;
+            }
+            break;
         case ESP_GATTS_EXEC_WRITE_EVT: 
             // the length of gattc prepare write data must be less than blemidi_mtu. 
             ESP_LOGI(BLEMIDI_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
@@ -629,17 +635,17 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         case ESP_GATTS_MTU_EVT:
             ESP_LOGI(BLEMIDI_TAG, "ESP_GATTS_MTU_EVT, MTU %d", param->mtu.mtu);
 
-	    // change MTU for BLE MIDI transactions
-	    if( param->mtu.mtu <= 3 ) {
-	      blemidi_mtu = param->mtu.mtu; // very unlikely...
-	    } else {
-	      // we decrease -10 to prevent following driver warning:
-	      //  (30774) BT_GATT: attribute value too long, to be truncated to 97
-	      blemidi_mtu = param->mtu.mtu - 10;
-	      // failsave
-	      if( blemidi_mtu > GATTS_MIDI_CHAR_VAL_LEN_MAX )
-		blemidi_mtu = GATTS_MIDI_CHAR_VAL_LEN_MAX;
-	    }
+            // change MTU for BLE MIDI transactions
+            if( param->mtu.mtu <= 3 ) {
+              blemidi_mtu = param->mtu.mtu; // very unlikely...
+            } else {
+              // we decrease -10 to prevent following driver warning:
+              //  (30774) BT_GATT: attribute value too long, to be truncated to 97
+              blemidi_mtu = param->mtu.mtu - 10;
+              // failsave
+              if( blemidi_mtu > GATTS_MIDI_CHAR_VAL_LEN_MAX )
+                blemidi_mtu = GATTS_MIDI_CHAR_VAL_LEN_MAX;
+            }
             break;
         case ESP_GATTS_CONF_EVT:
             ESP_LOGI(BLEMIDI_TAG, "ESP_GATTS_CONF_EVT, status = %d, attr_handle %d", param->conf.status, param->conf.handle);
@@ -802,6 +808,59 @@ int32_t blemidi_init(void *_callback_midi_message_received)
   
   // Finally install callback
   blemidi_callback_midi_message_received = _callback_midi_message_received;
+
+  esp_log_level_set(BLEMIDI_TAG, ESP_LOG_WARN); // can be changed with the "blemidi_debug on" console command
   
   return 0; // no error
 }
+
+
+#if BLEMIDI_ENABLE_CONSOLE
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Optional Console Commands
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  struct arg_str *on_off;
+  struct arg_end *end;
+} blemidi_debug_args;
+
+static int cmd_blemidi_debug(int argc, char **argv)
+{
+  int nerrors = arg_parse(argc, argv, (void **)&blemidi_debug_args);
+  if( nerrors != 0 ) {
+      arg_print_errors(stderr, blemidi_debug_args.end, argv[0]);
+      return 1;
+  }
+
+  if( strcasecmp(blemidi_debug_args.on_off->sval[0], "on") == 0 ) {
+    printf("Enabled debug messages\n");
+    esp_log_level_set(BLEMIDI_TAG, ESP_LOG_INFO);
+  } else {
+    printf("Disabled debug messages - they can be re-enabled with 'ble_debug on'\n");
+    esp_log_level_set(BLEMIDI_TAG, ESP_LOG_WARN);
+  }
+
+  return 0; // no error
+}
+
+void blemidi_register_console_commands(void)
+{
+  {
+    blemidi_debug_args.on_off = arg_str1(NULL, NULL, "<on/off>", "Enables/Disables debug messages");
+    blemidi_debug_args.end = arg_end(20);
+
+    const esp_console_cmd_t blemidi_debug_cmd = {
+      .command = "blemidi_debug",
+      .help = "Enables/Disables BLEMIDI Debug Messages",
+      .hint = NULL,
+      .func = &cmd_blemidi_debug,
+      .argtable = &blemidi_debug_args
+    };
+
+    ESP_ERROR_CHECK( esp_console_cmd_register(&blemidi_debug_cmd) );
+  }
+}
+
+#endif
+

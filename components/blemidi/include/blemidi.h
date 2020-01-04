@@ -55,6 +55,10 @@ extern "C" {
 #ifndef BLEMIDI_OUTBUFFER_FLUSH_MS
 #define BLEMIDI_OUTBUFFER_FLUSH_MS 15
 #endif
+
+#ifndef BLEMIDI_ENABLE_CONSOLE
+#define BLEMIDI_ENABLE_CONSOLE 1
+#endif
   
 /**
  * @brief Initializes the BLEMIDI Server
@@ -125,6 +129,19 @@ extern uint8_t blemidi_timestamp_high(void);
  * @return < 0 on errors
  */  
 extern uint8_t blemidi_timestamp_low(void);
+
+#if BLEMIDI_ENABLE_CONSOLE
+/**
+ * @brief Register Console Commands
+ *
+ * @return < 0 on errors
+ */
+extern void blemidi_register_console_commands(void);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
 
 #ifdef __cplusplus
 }
