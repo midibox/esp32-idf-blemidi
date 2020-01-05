@@ -21,3 +21,4 @@ Please optimize the app configuration with "idf.py menuconfig":
 * Compiler Options->Optimization Level: set to -Os (Release)
 * Component Config->ESP32 Specific: set Minimum Supported ESP32 Revision to 1 (if you have a newer device...)
 * Component Config->ESP32 Specific: set CPU frequency to 240 MHz
+* Component Config->FreeRTOS: set Tick rate (Hz) to 1000
