@@ -70,7 +70,7 @@ extern "C" {
 extern int32_t blemidi_init(void *callback_midi_message_received);
 
 /**
- * @brief Sends a BLE MIDI packet
+ * @brief Sends a BLE MIDI message
  *
  * @param  blemidi_port currently always 0 expected (we might support multiple ports in future)
  * @param  stream       output stream
@@ -79,7 +79,7 @@ extern int32_t blemidi_init(void *callback_midi_message_received);
  * @return < 0 on errors
  *
  */  
-extern int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len);
+extern int32_t blemidi_send_message(uint8_t blemidi_port, uint8_t *stream, size_t len);
 
 /**
  * @brief Flush Output Buffer (normally done by blemidi_tick_ms each 15 mS)
@@ -108,13 +108,11 @@ extern int32_t blemidi_outbuffer_flush(uint8_t blemidi_port);
 extern void blemidi_receive_packet_callback_for_debugging(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos);
 
 /**
- * @brief This function should be called each mS to increase the timestamp
- *
- * @param  ms how many ticks (corresponding to mS) should be added
+ * @brief This function should be called each mS to update the timestamp and flush the output buffer
  *
  * @return < 0 on errors
  */  
-extern void blemidi_tick_ms(uint16_t ms);
+extern void blemidi_tick(void);
   
 /**
  * @brief This function returns the high part of the timestamp

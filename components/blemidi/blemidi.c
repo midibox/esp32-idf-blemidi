@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "esp_system.h"
 #include "esp_log.h"
@@ -200,9 +201,11 @@ void (*blemidi_callback_midi_message_received)(uint8_t blemidi_port, uint16_t ti
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Timestamp handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-void blemidi_tick_ms(uint16_t ms)
+void blemidi_tick(void)
 {
-  blemidi_timestamp += ms;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  blemidi_timestamp = (tv.tv_sec * 1000 + (tv.tv_usec / 1000)); // 1 mS per increment
 
   if( (blemidi_outbuffer_timestamp_last_flush > blemidi_timestamp) ||
       (blemidi_timestamp > (blemidi_outbuffer_timestamp_last_flush + BLEMIDI_OUTBUFFER_FLUSH_MS)) ) {
@@ -247,28 +250,53 @@ int32_t blemidi_outbuffer_flush(uint8_t blemidi_port)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 static int32_t blemidi_outbuffer_push(uint8_t blemidi_port, uint8_t *stream, size_t len)
 {
+  const size_t max_header_size = 2;
+
   if( blemidi_port >= BLEMIDI_NUM_PORTS )
     return -1; // invalid port
   
   // if len >= MTU, it makes sense to send out immediately
-  if( len >= blemidi_mtu ) {
+  if( len >= (blemidi_mtu-max_header_size) ) {
+    // this is very unlikely, since applemidi_send_message() maintains the size
+    // but just in case of future extensions, we prepare dynamic memory allocation for "big packets"
     blemidi_outbuffer_flush(blemidi_port);
-    esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], len, stream, false);
+    {
+      size_t packet_len = max_header_size + len;
+      uint8_t *packet = malloc(packet_len);
+      if( packet == NULL ) {
+        return -1; // couldn't create temporary packet
+      } else {
+        // new packet: with timestampHigh and timestampLow, or in case of continued SysEx packet: only timestampHigh
+        packet[0] = blemidi_timestamp_high();
+        if( stream[0] >= 0x80 ) {
+          packet[1] = blemidi_timestamp_low();
+          memcpy((uint8_t *)packet + 2, stream, len);
+        } else {
+          packet_len -= 1;
+          memcpy((uint8_t *)packet + 1, stream, len);
+        }
+        esp_ble_gatts_send_indicate(midi_profile_tab[PROFILE_APP_IDX].gatts_if, midi_profile_tab[PROFILE_APP_IDX].conn_id, midi_handle_table[IDX_CHAR_VAL_A], packet_len, packet, false);
+        free(packet);
+      }
+    }
   } else {
     // flush buffer before adding new message
     if( (blemidi_outbuffer_len[blemidi_port] + len) >= blemidi_mtu )
       blemidi_outbuffer_flush(blemidi_port);
 
     // adding new message
-    if( blemidi_outbuffer_len[blemidi_port] == 0 || ((stream[0] & 0x80) && !(stream[1] & 0x80)) ) {
+    if( blemidi_outbuffer_len[blemidi_port] == 0 ) {
       // new packet: with timestampHigh and timestampLow, or in case of continued SysEx packet: only timestampHigh
-      memcpy(&blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]], stream, len);
-      blemidi_outbuffer_len[blemidi_port] += len;
+      blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]++] = blemidi_timestamp_high();
+      if( stream[0] >= 0x80 ) {
+        blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]++] = blemidi_timestamp_low();
+      }
     } else {
-      // remove timestampHigh, send only timestampLow
-      memcpy(&blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]], &stream[1], len-1);
-      blemidi_outbuffer_len[blemidi_port] += len-1;
+      blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]++] = blemidi_timestamp_low();
     }
+
+    memcpy(&blemidi_outbuffer[blemidi_port][blemidi_outbuffer_len[blemidi_port]], stream, len);
+    blemidi_outbuffer_len[blemidi_port] += len;
   }
   
   return 0; // no error
@@ -276,10 +304,12 @@ static int32_t blemidi_outbuffer_push(uint8_t blemidi_port, uint8_t *stream, siz
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-// Sends a BLE MIDI packet
+// Sends a BLE MIDI message
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
+int32_t blemidi_send_message(uint8_t blemidi_port, uint8_t *stream, size_t len)
 {
+  const size_t max_header_size = 2;
+
   if( blemidi_port >= BLEMIDI_NUM_PORTS )
     return -1; // invalid port
   
@@ -287,25 +317,19 @@ int32_t blemidi_send_packet(uint8_t blemidi_port, uint8_t *stream, size_t len)
   // if more bytes need to be sent, split over multiple packets
   // this will cost some extra stack space :-/ therefore handled separatly?
 
-  if( len < blemidi_mtu ) {
+  if( len < (blemidi_mtu-max_header_size) ) {
     // just add to output buffer
     blemidi_outbuffer_push(blemidi_port, stream, len);
   } else {
     // sending packets
+    size_t max_size = blemidi_mtu - max_header_size; // -3 since blemidi_outbuffer_push() will add the timestamps
     int pos;
-    for(pos=0; pos<len; pos += blemidi_mtu) {
-      if( pos == 0 ) {
-        blemidi_outbuffer_push(blemidi_port, stream, blemidi_mtu);
-      } else {
-        uint8_t packet[GATTS_MIDI_CHAR_VAL_LEN_MAX]; // now it becomes stack hungry...
-        size_t packet_len = len-pos+1;
-        if( packet_len >= blemidi_mtu ) {
-          packet_len = blemidi_mtu + 1;
-        }
-        packet[0] = blemidi_timestamp_high();
-        memcpy(&packet[1], &stream[pos], packet_len-1);
-        blemidi_outbuffer_push(blemidi_port, packet, packet_len);
+    for(pos=0; pos<len; pos += max_size) {
+      size_t packet_len = len-pos;
+      if( packet_len >= max_size ) {
+        packet_len = max_size;
       }
+      blemidi_outbuffer_push(blemidi_port, &stream[pos], packet_len);
     }
   }
   
@@ -637,14 +661,14 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
             // change MTU for BLE MIDI transactions
             if( param->mtu.mtu <= 3 ) {
-              blemidi_mtu = param->mtu.mtu; // very unlikely...
+              blemidi_mtu = 3; // very unlikely...
             } else {
               // we decrease -10 to prevent following driver warning:
               //  (30774) BT_GATT: attribute value too long, to be truncated to 97
-              blemidi_mtu = param->mtu.mtu - 10;
+              blemidi_mtu = param->mtu.mtu - 3;
               // failsave
-              if( blemidi_mtu > GATTS_MIDI_CHAR_VAL_LEN_MAX )
-                blemidi_mtu = GATTS_MIDI_CHAR_VAL_LEN_MAX;
+              if( blemidi_mtu > (GATTS_MIDI_CHAR_VAL_LEN_MAX-3) )
+                blemidi_mtu = (GATTS_MIDI_CHAR_VAL_LEN_MAX-3);
             }
             break;
         case ESP_GATTS_CONF_EVT:

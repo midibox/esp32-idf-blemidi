@@ -41,7 +41,7 @@ void app_main()
     ESP_LOGE(BLEMIDI_TAG, "BLE MIDI Driver returned status=%d", status);
   } else {
     ESP_LOGI(BLEMIDI_TAG, "BLE MIDI Driver initialized successfully");
-    xTaskCreate(task_midi, "task_midi", 2048, NULL, 8, NULL);    
+    xTaskCreate(task_midi, "task_midi", 4096, NULL, 8, NULL);    
   }
 }
 ```
@@ -74,7 +74,7 @@ Currently no comfortable API exists, it might come later:
 ```c
     {
       // TODO: more comfortable packet creation via special APIs
-      uint8_t packet[5] = { 0x80, 0x80, 0x90, 0x3c, 0x7f };
-      blemidi_send_packet(0, packet, 5);
+      uint8_t message[3] = { 0x90, 0x3c, 0x7f };
+      blemidi_send_packet(0, message, sizeof(message));
     }
 ```

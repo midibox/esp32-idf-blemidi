@@ -40,6 +40,8 @@
 
 #include "blemidi.h"
 
+#define TAG "MIDIbox"
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // This task is periodically called to send a MIDI message
@@ -55,27 +57,28 @@ static void task_midi(void *pvParameters)
   while( 1 ) {
     vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
 
-    blemidi_tick_ms(500); // for timestamp handling
+    blemidi_tick(); // for timestamp and output buffer handling
 
+#if 1
     ctr += 1;
-    ESP_LOGI(BLEMIDI_TAG, "Sending MIDI Note #%d", ctr);
+    ESP_LOGI(TAG, "Sending MIDI Note #%d", ctr);
 
     {
       // TODO: more comfortable packet creation via special APIs
-      uint8_t packet[5] = { blemidi_timestamp_high(), blemidi_timestamp_low(), 0x90, 0x3c, 0x7f };
-      blemidi_send_packet(0, packet, 5);
+      uint8_t message[3] = { 0x90, 0x3c, 0x7f };
+      blemidi_send_message(0, message, sizeof(message));
     }
     
     vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
 
-    blemidi_tick_ms(500); // for timestamp handling
+    blemidi_tick(); // for timestamp and output buffer handling
 
     {
       // TODO: more comfortable packet creation via special APIs
-      uint8_t packet[5] = { blemidi_timestamp_high(), blemidi_timestamp_low(), 0x90, 0x3c, 0x00 };
-      blemidi_send_packet(0, packet, 5);
+      uint8_t message[3] = { 0x90, 0x3c, 0x00 };
+      blemidi_send_message(0, message, sizeof(message));
     }
-
+#endif
   }
 }
 
@@ -85,8 +88,8 @@ static void task_midi(void *pvParameters)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, uint8_t midi_status, uint8_t *remaining_message, size_t len, size_t continued_sysex_pos)
 {
-  ESP_LOGI(BLEMIDI_TAG, "CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, continued_sysex_pos=%d, remaining_message:", blemidi_port, timestamp, midi_status, len, continued_sysex_pos);
-  esp_log_buffer_hex(BLEMIDI_TAG, remaining_message, len);
+  ESP_LOGI(TAG, "CALLBACK blemidi_port=%d, timestamp=%d, midi_status=0x%02x, len=%d, continued_sysex_pos=%d, remaining_message:", blemidi_port, timestamp, midi_status, len, continued_sysex_pos);
+  esp_log_buffer_hex(TAG, remaining_message, len);
 
   // loopback received message
   {
@@ -95,19 +98,21 @@ void callback_midi_message_received(uint8_t blemidi_port, uint16_t timestamp, ui
     // Note: by intention we create new packets for each incoming message
     // this shows that running status is maintained, and that SysEx streams work as well
     
-    size_t loopback_packet_len = 3 + len; // includes timestamp, MIDI status and remaining bytes
-    uint8_t *loopback_packet = (uint8_t *)malloc(loopback_packet_len * sizeof(uint8_t));
-    if( loopback_packet == NULL ) {
-      // no memory...
+    if( midi_status == 0xf0 && continued_sysex_pos > 0 ) {
+      blemidi_send_message(0, remaining_message, len); // just forward
     } else {
-      loopback_packet[0] = blemidi_timestamp_high();
-      loopback_packet[1] = blemidi_timestamp_low();
-      loopback_packet[2] = midi_status;
-      memcpy(&loopback_packet[3], remaining_message, len);
+      size_t loopback_message_len = 1 + len; // includes MIDI status and remaining bytes
+      uint8_t *loopback_message = (uint8_t *)malloc(loopback_message_len * sizeof(uint8_t));
+      if( loopback_message == NULL ) {
+        // no memory...
+      } else {
+        loopback_message[0] = midi_status;
+        memcpy(&loopback_message[1], remaining_message, len);
 
-      blemidi_send_packet(0, loopback_packet, loopback_packet_len);
+        blemidi_send_message(0, loopback_message, loopback_message_len);
 
-      free(loopback_packet);
+        free(loopback_message);
+      }
     }
   }
 }
@@ -121,9 +126,14 @@ void app_main()
   // install BLE MIDI service
   int status = blemidi_init(callback_midi_message_received);
   if( status < 0 ) {
-    ESP_LOGE(BLEMIDI_TAG, "BLE MIDI Driver returned status=%d", status);
+    ESP_LOGE(TAG, "BLE MIDI Driver returned status=%d", status);
   } else {
-    ESP_LOGI(BLEMIDI_TAG, "BLE MIDI Driver initialized successfully");
-    xTaskCreate(task_midi, "task_midi", 2048, NULL, 8, NULL);    
+    ESP_LOGI(TAG, "BLE MIDI Driver initialized successfully");
+    xTaskCreate(task_midi, "task_midi", 4096, NULL, 8, NULL);
   }
+
+#if 1
+  // disable this for less debug messages (avoid packet loss on loopbacks)
+  esp_log_level_set(TAG, ESP_LOG_WARN);
+#endif
 }
