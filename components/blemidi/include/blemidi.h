@@ -33,12 +33,7 @@
 #ifndef _BLEMIDI_H
 #define _BLEMIDI_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
-
 
 #ifndef BLEMIDI_DEVICE_NAME
 #define BLEMIDI_DEVICE_NAME "MIDIbox"
@@ -59,7 +54,11 @@ extern "C" {
 #ifndef BLEMIDI_ENABLE_CONSOLE
 #define BLEMIDI_ENABLE_CONSOLE 1
 #endif
-  
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initializes the BLEMIDI Server
  *
@@ -135,10 +134,6 @@ extern uint8_t blemidi_timestamp_low(void);
  * @return < 0 on errors
  */
 extern void blemidi_register_console_commands(void);
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #ifdef __cplusplus
