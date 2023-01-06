@@ -1,0 +1,5 @@
+version: "1.0.0"
+description: "ESP32 BLE MIDI Server"
+url: https://github.com/midibox/esp32-idf-blemidi
+dependencies:
+  idf: ">=5.0"
