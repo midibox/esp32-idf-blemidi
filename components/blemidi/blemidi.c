@@ -187,9 +187,10 @@ static struct gatts_profile_inst midi_profile_tab[PROFILE_NUM] = {
 static const uint16_t primary_service_uuid         = ESP_GATT_UUID_PRI_SERVICE;
 static const uint16_t character_declaration_uuid   = ESP_GATT_UUID_CHAR_DECLARE;
 static const uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
-static const uint8_t char_prop_read                = ESP_GATT_CHAR_PROP_BIT_READ;
-static const uint8_t char_prop_write               = ESP_GATT_CHAR_PROP_BIT_WRITE;
-static const uint8_t char_prop_read_write_notify   = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+// FIXME: verify if needed currently not used anywhere
+// static const uint8_t char_prop_read                = ESP_GATT_CHAR_PROP_BIT_READ;
+// static const uint8_t char_prop_write               = ESP_GATT_CHAR_PROP_BIT_WRITE;
+// static const uint8_t char_prop_read_write_notify   = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 static const uint8_t char_prop_read_write_writenr_notify = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
 
 static const uint8_t char_value[3]                 = {0x80, 0x80, 0xfe};
