@@ -48,14 +48,14 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 static void task_midi(void *pvParameters)
 {
-  portTickType xLastExecutionTime;
+  TickType_t xLastExecutionTime;
   unsigned ctr = 0;
 
   // Initialise the xLastExecutionTime variable on task entry
   xLastExecutionTime = xTaskGetTickCount();
 
   while( 1 ) {
-    vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
+    vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_PERIOD_MS);
 
     blemidi_tick(); // for timestamp and output buffer handling
 
@@ -69,7 +69,7 @@ static void task_midi(void *pvParameters)
       blemidi_send_message(0, message, sizeof(message));
     }
     
-    vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_RATE_MS);
+    vTaskDelayUntil(&xLastExecutionTime, 500 / portTICK_PERIOD_MS);
 
     blemidi_tick(); // for timestamp and output buffer handling
 
